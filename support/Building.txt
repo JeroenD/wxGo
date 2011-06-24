@@ -1,0 +1,51 @@
+The following is needed for building wxGo
+
+- wxWidgets (version 2.8.11.0 or version close to it.)
+
+- SWIG
+
+Download wxWidgets from www.wxWidgets.org. I have worked with the stable
+release which was 2.8.11.0 at the time but this code should very likely
+work with the most recent stable release.
+
+Build wxWidgets from source. 
+
+On the windows platform do that with MinGW/MSYS.
+
+TODO: Detailed wxWidgets build instructions
+
+After building wxWidgets make sure you get at least the 'Minimal' example
+working.
+
+Download the latest SWIG version from www.swig.org. Go support for SWIG
+is still undergoing development. Especially for the Windows platform
+I needed to apply a patch for better dll support.
+
+That meant I had to build SWIG from source file on Windows which required
+some additional tools installed like bison, ed.
+
+The SWIG version you want is latest from SVN repository and then apply the
+patch done by Wei Guangjing.
+Look for the 'swig go support windows port' thread on golang-nuts.
+I have included the patch file with my wxGo repository in the support
+directory. In future releases if SWIG this will likely not be required.
+
+TODO: Detailed SWIG build from source instructions
+
+I also needed to make some changes to the Make.pkg file in the Go
+directory so it was able to link the SWIG dll with all the required
+library files. The changes file is in support/Make.pkg. These changes
+may also no longer needed when better swig/go/windows support is
+available.
+
+If you got this far then you are almost there.
+
+To build the wxGo library:
+cd wx
+make install
+
+To build the examples apps just go to the relevant directories and type make.
+
+
+
+

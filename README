@@ -6,7 +6,10 @@ be downloaded separately.
 The wrappers are created using the SWIG tool.
 
 There are currenly still some patches/tricks required to get a 
-propper build going.
+propper build going. Mostly releasted to SWIG support on windows.
+
+Read support/Building.txt for information on how to get it all going
+on windows.
 
 Jeroen Dirks
 June 2011

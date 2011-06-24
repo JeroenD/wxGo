@@ -1,0 +1,316 @@
+Index: Examples/go/callback/Makefile.win
+===================================================================
+--- Examples/go/callback/Makefile.win	(revision 0)
++++ Examples/go/callback/Makefile.win	(revision 0)
+@@ -0,0 +1,25 @@
++TOP        = ../..
++SWIG       = $(TOP)/../preinst-swig
++CXXSRCS    = example.cxx
++TARGET     = example
++INTERFACE  = example.i
++SWIGOPT    = -windows
++#LIBS=-L. -lrunme
++
++all::	go
++
++go::
++	../../../preinst-swig -go -c++  ${SWIGOPT} ${INTERFACE}
++	8g -I . example.go
++	g++ -g -c    example.cxx example_wrap.cxx example_dllmain.cxx
++	g++ -shared    example.o example_wrap.o example_dllmain.o -o example.dll  -Wl,--out-imp,libexample.a
++	8c -I ${GOROOT}/pkg/${GOOS}_${GOARCH} example_gc.c
++	gopack grc example.a example.8 example_gc.8
++	8g -I . runme.go
++	8l -o runme.exe -L . runme.8
++
++clean::
++	$(MAKE) -f $(TOP)/Makefile go_clean
++
++check: all
++	$(MAKE) -f $(TOP)/Makefile TARGET='$(TARGET)' INTERFACE='$(INTERFACE)' go_run
+Index: Lib/go/goruntime.swg
+===================================================================
+--- Lib/go/goruntime.swg	(revision 12454)
++++ Lib/go/goruntime.swg	(working copy)
+@@ -33,9 +33,9 @@
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+-extern void crosscall2(void (*fn)(void *, int), void *, int);
+-extern void _cgo_allocate(void *, int);
+-extern void _cgo_panic(void *, int);
++extern void (*crosscall2)(void (*fn)(void *, int), void *, int);
++extern void (*_cgo_allocate)(void *, int);
++extern void (*_cgo_panic)(void *, int);
+ #ifdef __cplusplus
+ }
+ #endif
+@@ -126,3 +126,59 @@
+ type _swig_fnptr *byte
+ type _swig_memberptr *byte
+ %}
++
++#ifndef SWIGGO_GCCGO
++
++%insert(dllmain) %{
++#include <windows.h>
++#include <assert.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++void (*crosscall2)(void (*fn)(void *, int), void *, int);
++void (*_cgo_allocate)(void *, int);
++void (*_cgo_panic)(void *, int);
++#ifdef __cplusplus
++}
++#endif
++
++static void initdynexports(HMODULE h);
++
++extern "C" BOOL WINAPI
++DllMain (HANDLE hDll, DWORD dwReason, LPVOID lpReserved)
++{
++    switch (dwReason)
++    {
++        case DLL_PROCESS_ATTACH:
++            HMODULE hModule;
++            hModule = GetModuleHandle(NULL);
++            crosscall2 = (void (*)(void (*fn)(void *, int), void *, int))GetProcAddress(hModule, "crosscall2");
++            assert(crosscall2 != NULL);
++            _cgo_allocate = (void (*)(void *, int))GetProcAddress(hModule, "_cgo_allocate");
++            assert(_cgo_allocate != NULL);
++            _cgo_panic = (void (*)(void *, int))GetProcAddress(hModule, "_cgo_panic");
++            assert(_cgo_panic != NULL);
++            
++            initdynexports(hModule);
++            
++            break;
++
++        case DLL_PROCESS_DETACH:
++            break;
++
++        case DLL_THREAD_ATTACH:
++            break;
++
++        case DLL_THREAD_DETACH:
++            break;
++    }
++    return TRUE;
++}
++
++#include "__dllmain.h"
++
++static void initdynexports(HMODULE h) {
++
++%}
++#endif
+\ No newline at end of file
+Index: Source/Modules/go.cxx
+===================================================================
+--- Source/Modules/go.cxx	(revision 12454)
++++ Source/Modules/go.cxx	(working copy)
+@@ -27,6 +27,8 @@
+   String *soname;
+   // Size in bits of the C type "long".
+   int long_type_size;
++  // Flag for Windows
++  bool windows_flag;
+ 
+   /* Output files */
+   File *f_c_begin;
+@@ -46,6 +48,8 @@
+   File *f_gc_runtime;
+   File *f_gc_header;
+   File *f_gc_wrappers;
++  File *f_dllmain;
++  File *f_dllmain_h;
+ 
+   // True if we imported a module.
+   bool saw_import;
+@@ -86,6 +90,7 @@
+      go_prefix(NULL),
+      soname(NULL),
+      long_type_size(32),
++     windows_flag(false),
+      f_c_begin(NULL),
+      f_go_begin(NULL),
+      f_gc_begin(NULL),
+@@ -101,6 +106,8 @@
+      f_gc_runtime(NULL),
+      f_gc_header(NULL),
+      f_gc_wrappers(NULL),
++     f_dllmain(NULL),
++     f_dllmain_h(NULL),
+      saw_import(false),
+      imported_package(NULL),
+      interfaces(NULL),
+@@ -138,6 +145,9 @@
+ 	} else if (strcmp(argv[i], "-gccgo") == 0) {
+ 	  Swig_mark_arg(i);
+ 	  gccgo_flag = true;
++	} else if (strcmp(argv[i], "-windows") == 0) {
++	  Swig_mark_arg(i);
++	  windows_flag = true;
+ 	} else if (strcmp(argv[i], "-go-prefix") == 0) {
+ 	  if (argv[i + 1]) {
+ 	    go_prefix = NewString(argv[i + 1]);
+@@ -240,7 +250,10 @@
+     }
+     if (!soname) {
+       soname = Copy(package);
+-      Append(soname, ".so");
++      if (windows_flag)
++      	Append(soname, ".dll");
++      else
++      	Append(soname, ".so");
+     }
+ 
+     // Get filenames.
+@@ -256,7 +269,12 @@
+       gc_filename = NewString("");
+       Printf(gc_filename, "%s%s_gc.c", SWIG_output_directory(), module);
+     }
+-
++    
++    String *gc_dllmain_filename = NewString("");
++    Printf(gc_dllmain_filename, "%s%s_dllmain.cxx", SWIG_output_directory(), module);
++    String *gc_dllmain_h_filename = NewString("");
++    Printf(gc_dllmain_h_filename, "%s__dllmain.h", SWIG_output_directory());
++    
+     // Open files.
+ 
+     f_c_begin = NewFile(c_filename, "w", SWIG_output_files());
+@@ -282,6 +300,19 @@
+       FileErrorDisplay(go_filename);
+       SWIG_exit(EXIT_FAILURE);
+     }
++    
++    if (windows_flag) {
++    	f_dllmain = NewFile(gc_dllmain_filename, "w", SWIG_output_files());
++    	f_dllmain_h = NewFile(gc_dllmain_h_filename, "w", SWIG_output_files());
++	    if (!f_dllmain) {
++	      FileErrorDisplay(gc_dllmain_filename);
++	      SWIG_exit(EXIT_FAILURE);
++	    }
++	    if (!f_dllmain_h) {
++	    	FileErrorDisplay(gc_dllmain_h_filename);
++	      SWIG_exit(EXIT_FAILURE);
++	    }
++    }
+ 
+     if (!gccgo_flag) {
+       f_gc_begin = NewFile(gc_filename, "w", SWIG_output_files());
+@@ -316,6 +347,7 @@
+     Swig_register_filebyname("go_runtime", f_go_runtime);
+     Swig_register_filebyname("go_header", f_go_header);
+     Swig_register_filebyname("go_wrapper", f_go_wrappers);
++    Swig_register_filebyname("dllmain", f_dllmain);
+     if (!gccgo_flag) {
+       Swig_register_filebyname("gc_begin", f_gc_begin);
+       Swig_register_filebyname("gc_runtime", f_gc_runtime);
+@@ -341,7 +373,8 @@
+     if (!gccgo_flag) {
+       Swig_banner(f_gc_begin);
+       Printf(f_gc_begin, "\n/* This file should be compiled with 6c/8c.  */\n");
+-      Printf(f_gc_begin, "#pragma dynimport _ _ \"%s\"\n", soname);
++      if (!windows_flag)
++      	Printf(f_gc_begin, "#pragma dynimport _ _ \"%s\"\n", soname);
+     }
+ 
+     // Output module initialization code.
+@@ -436,6 +469,10 @@
+       Close(f_gc_begin);
+       Delete(f_gc_begin);
+     }
++    
++    Printf(f_dllmain, "\n}\n");
++    Close(f_dllmain);
++    Delete(f_dllmain);
+ 
+     return SWIG_OK;
+   }
+@@ -998,9 +1035,13 @@
+   int gcFunctionWrapper(Node *n, String *name, String *go_name, String *overname, String *wname, ParmList *parms, SwigType *result, bool is_static, bool needs_wrapper) {
+     Wrapper *f = NewWrapper();
+ 
+-    Printv(f->def, "#pragma dynimport ", wname, " ", wname, " \"\"\n", NULL);
++    if (windows_flag)
++    	Printv(f->def, "#pragma dynimport ", wname, " ", wname, " \"", soname, "\"\n", NULL);
++    else
++    	Printv(f->def, "#pragma dynimport ", wname, " ", wname, " \"\"\n", NULL);
+     Printv(f->def, "extern void (*", wname, ")(void*);\n", NULL);
+-    Printv(f->def, "static void (*x", wname, ")(void*) = ", wname, ";\n", NULL);
++    if (!windows_flag)
++    	Printv(f->def, "static void (*x", wname, ")(void*) = ", wname, ";\n", NULL);
+     Printv(f->def, "\n", NULL);
+     Printv(f->def, "void\n", NULL);
+ 
+@@ -1056,7 +1097,10 @@
+     Delete(parm_size);
+ 
+     Printv(f->code, "{\n", NULL);
+-    Printv(f->code, "\truntime\xc2\xb7" "cgocall(x", wname, ", &p);\n", NULL);
++    if (windows_flag)
++    	Printv(f->code, "\truntime\xc2\xb7" "cgocall(", wname, ", &p);\n", NULL);
++    else
++    	Printv(f->code, "\truntime\xc2\xb7" "cgocall(x", wname, ", &p);\n", NULL);
+     Printv(f->code, "}\n", NULL);
+     Printv(f->code, "\n", NULL);
+ 
+@@ -2715,7 +2759,10 @@
+ 
+     if (!is_ignored) {
+       if (!gccgo_flag) {
+-	Printv(f_c_directors, "extern \"C\" void ", wname, "(void*, int);\n", NULL);
++        if (windows_flag)
++          Printv(f_c_directors, "extern \"C\" void (*", wname, ")(void*, int);\n", NULL);
++        else
++          Printv(f_c_directors, "extern \"C\" void ", wname, "(void*, int);\n", NULL);
+       } else {
+ 	Printv(f_c_directors, "extern \"C\" void ", wname, "(void*) __asm__(\"", go_prefix, ".", package, ".", go_name, "\");\n", NULL);
+       }
+@@ -2737,6 +2784,11 @@
+ 	Printv(f_c_directors, "  a.p = go_val;\n", NULL);
+ 	Printv(f_c_directors, "  crosscall2(", wname, ", &a, (int) sizeof a);\n", NULL);
+ 
++	if (windows_flag) {
++		Printv(f_dllmain_h, "void (*", wname, ")(void *, int);\n", NULL);
++		Printf(f_dllmain, "%s = (void (*)(void*, int))GetProcAddress(h, \"%s\");\n", wname, wname);
++	}
++		
+ 	Printv(f_gc_wrappers, "#pragma dynexport ", wname, " ", wname, "\n", NULL);
+ 	Printv(f_gc_wrappers, "extern void \xc2\xb7", go_name, "();\n", NULL);
+ 	Printv(f_gc_wrappers, "void\n", NULL);
+@@ -3323,7 +3375,10 @@
+       Delete(upcall_wname);
+ 
+       if (!gccgo_flag) {
+-	Printv(f_c_directors, "extern \"C\" void ", callback_wname, "(void*, int);\n", NULL);
++        if (windows_flag)
++          Printv(f_c_directors, "extern \"C\" void (*", callback_wname, ")(void*, int);\n", NULL);
++        else
++          Printv(f_c_directors, "extern \"C\" void ", callback_wname, "(void*, int);\n", NULL);
+       } else {
+ 	Printv(f_c_directors, "extern \"C\" ", NULL);
+ 
+@@ -3462,7 +3517,12 @@
+ 	    Delete(rname);
+ 	  }
+ 
+-	  // The C wrapper code which calls the Go function.
++	  if (windows_flag) {
++	  	Printv(f_dllmain_h, "void (*", callback_wname, ")(void *, int);\n", NULL);
++	  	Printf(f_dllmain, "%s = (void (*)(void*, int))GetProcAddress(h, \"%s\");\n", callback_wname, callback_wname);
++	  }
++	  
++	  // The C wrapper code which calls the Go function.	  
+ 	  Printv(f_gc_wrappers, "#pragma dynexport ", callback_wname, " ", callback_wname, "\n", NULL);
+ 	  Printv(f_gc_wrappers, "extern void \xc2\xb7", callback_name, "();\n", NULL);
+ 	  Printv(f_gc_wrappers, "void\n", NULL);
+@@ -4743,4 +4803,5 @@
+      -go-prefix <p>      - Like gccgo -fgo-prefix option\n\
+      -soname <name>      - Set shared library holding C/C++ code to <name>\n\
+      -longsize <s>       - Set size of C/C++ long type--32 or 64 bits\n\
++     -windows            - Windows\n\
+ \n";
