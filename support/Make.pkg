@@ -35,6 +35,9 @@ INSTALLFILES+=$(pkgdir)/$(TARG).a
 
 _SOTYPE_windows=dll
 _SOTYPE_linux=so
+_SWIGFLAG_windows=-windows
+_SWIGFLAG_linux=
+_SWIGDLLMAIN_windows=_obj/%_dllmain.o
 
 # The rest of the cgo rules are below, but these variable updates
 # must be done here so they apply to the main rules.
@@ -202,11 +205,11 @@ _cgo_defun.$O: _obj/_cgo_defun.c
 ifdef SWIGFILES
 _obj/%._swig_run _obj/%.go _obj/%_gc.c _obj/%_wrap.c: %.swig
 	@mkdir -p _obj
-	swig -go -windows -module $* -soname $(SWIG_PREFIX)-$*.$(_SOTYPE_$(GOOS)) -o _obj/$*_wrap.c -outdir _obj $<
+	swig -go $(_SWIGFLAG_$(GOOS)) -module $* -soname $(SWIG_PREFIX)-$*.$(_SOTYPE_$(GOOS)) -o _obj/$*_wrap.c -outdir _obj $<
 
 _obj/%._swig_run _obj/%.go _obj/%_gc.c _obj/%_wrap.cxx: %.swigcxx
 	@mkdir -p _obj
-	swig -go -c++ -windows -module $* -soname $(SWIG_PREFIX)-$*.$(_SOTYPE_$(GOOS)) $(SWIG_CXXFLAGS) -o _obj/$*_wrap.cxx -outdir _obj $<
+	swig -go -c++ $(_SWIGFLAG_$(GOOS)) -module $* -soname $(SWIG_PREFIX)-$*.$(_SOTYPE_$(GOOS)) $(SWIG_CXXFLAGS) -o _obj/$*_wrap.cxx -outdir _obj $<
 
 _obj/%_gc.$O: _obj/%_gc.c
 	$(CC) $(CFLAGS) -I . -I$(pkgdir) -o "$@" _obj/$*_gc.c
@@ -222,10 +225,7 @@ _obj/%_wrapcxx.o: _obj/%_wrap.cxx
 _obj/%_dllmain.o: _obj/%_dllmain.cxx
 	$(HOST_CXX) $(_CGO_CFLAGS_$(GOARCH)) -I . -g -fPIC -O2 -o $@ -c $^ $(SWIG_CXXFLAGS)
 	
-_obj/$(SWIG_PREFIX)-%.$(_SOTYPE_$(GOOS)): _obj/%_wrap.o _obj/%_dllmain.o
-	$(HOST_CC) $(_CGO_CFLAGS_$(GOARCH)) -o $@ $^ $(SWIG_LDFLAGS) $(_CGO_LDFLAGS_$(GOOS)) $(_SWIG_LDFLAGS_$(GOOS))
-
-_obj/$(SWIG_PREFIX)-%.$(_SOTYPE_$(GOOS)): _obj/%_wrapcxx.o _obj/%_dllmain.o $(CXXOBJS)
+_obj/$(SWIG_PREFIX)-%.$(_SOTYPE_$(GOOS)): _obj/%_wrapcxx.o $(_SWIGDLLMAIN_$(GOOS)) $(CXXOBJS)
 	$(HOST_CXX) $(_CGO_CFLAGS_$(GOARCH)) -o $@ $^ $(SWIG_LDFLAGS) $(_CGO_LDFLAGS_$(GOOS)) $(_SWIG_LDFLAGS_$(GOOS))
 
 $(pkgdir)/swig/$(SWIG_PREFIX)-%.$(_SOTYPE_$(GOOS)): _obj/$(SWIG_PREFIX)-%.$(_SOTYPE_$(GOOS))
