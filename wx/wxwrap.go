@@ -1,8 +1,5 @@
 package wx
 
-import ( "fmt"
-)
-
 func NullWindow() WxWindow {
 	return SwigcptrWxWindow(0)
 }
@@ -21,7 +18,7 @@ type DirESink struct{
 }
 
 func (p *DirESink) GoEvent( event WxEvent ) {
-   fmt.Printf("In Go land for %d\n", p.id)
+   // fmt.Printf("In Go land for %d\n", p.id)
    if p.cef != nil {
      cmd_event := SwigcptrWxCommandEvent(event.Swigcptr())
      p.cef( cmd_event )

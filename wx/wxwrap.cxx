@@ -27,15 +27,12 @@ int wxGoApp::MainLoop() {
 
 ESink::~ESink()
 {
-	cerr << "ESink deletion" << endl;
 }
 
 void ESink::Thunk( wxEvent& event )
 {
 	ESink* cb = (ESink*)event.m_callbackUserData;
 	cb->GoEvent( event );
-//	cerr << "id: " << event.GetId() << " type: " 
-//		<< event.GetEventType() << " this: " << this << endl;
 }
 
 IMPLEMENT_DYNAMIC_CLASS(wxGoTreeCtrl, wxTreeCtrl)
