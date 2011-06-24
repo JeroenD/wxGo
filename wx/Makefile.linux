@@ -1,0 +1,43 @@
+# Makefile that works for linux
+
+# set based on wx-config --cppflags
+WXCPPFLAGS=-I/usr/local/lib/wx/include/gtk2-ansi-release-2.8 -I/usr/local/include/wx-2.8 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES -D__WXGTK__
+
+# set based on wx-config --libs
+WXLIBS=-L/usr/local/lib -pthread   -lwx_gtk2_richtext-2.8 -lwx_gtk2_aui-2.8 -lwx_gtk2_xrc-2.8 -lwx_gtk2_qa-2.8 -lwx_gtk2_html-2.8 -lwx_gtk2_adv-2.8 -lwx_gtk2_core-2.8 -lwx_base_xml-2.8 -lwx_base_net-2.8 -lwx_base-2.8
+
+
+SWIG_CXXFLAGS=${WXCPPFLAGS}
+
+
+SWIG_LDFLAGS=${WXLIBS} ${EXTRALIBS}
+
+CXXFLAGS=-c -fPIC ${WXCPPFLAGS}
+
+include ${GOROOT}/src/Make.inc
+
+SWIGOPT+=${WXDEFS}
+
+TARG = wx
+	
+SWIGFILES=\
+	wx.swigcxx
+
+CXXFILES=\
+	wxwrap.cxx
+
+GOFILES=wxwrap.go
+	
+CXXOBJS=$(patsubst %.cxx,_obj/%.o,$(CXXFILES))
+	
+include ${GOROOT}/src/Make.pkg
+
+%: install %.go
+	$(GC) $*.go
+	$(LD) $(SWIG_RPATH) -o $@ $*.$0
+	
+_obj/%.o: %.cxx $(HFILES)
+	@mkdir -p _obj
+	$(HOST_CXX) $(CXXFLAGS) -o $@ $*.cxx
+
+	
