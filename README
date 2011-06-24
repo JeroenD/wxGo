@@ -1,0 +1,12 @@
+This is the source code for wxGo a Go wrapper of the wxWidgets library.
+
+The actuall wxWidgets source code is not included and will need to
+be downloaded separately.
+
+The wrappers are created using the SWIG tool.
+
+There are currenly still some patches/tricks required to get a 
+propper build going.
+
+Jeroen Dirks
+June 2011
